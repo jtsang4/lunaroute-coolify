@@ -1,0 +1,26 @@
+services:
+  lunaroute:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        LUNAROUTE_VERSION: ${LUNAROUTE_VERSION:-0.2.1}
+    environment:
+      - LUNAROUTE_HOST=0.0.0.0
+      - LUNAROUTE_PORT=8081
+      - LUNAROUTE_UI_ENABLED=true
+      - LUNAROUTE_UI_HOST=0.0.0.0
+      - LUNAROUTE_UI_PORT=8082
+      - LUNAROUTE_DIALECT=both
+      - LUNAROUTE_ENABLE_SESSION_RECORDING=true
+      - LUNAROUTE_SESSIONS_DIR=/data/lunaroute/sessions
+      - LUNAROUTE_SESSIONS_DB_PATH=/data/lunaroute/sessions.db
+      - LUNAROUTE_LOG_LEVEL=${LUNAROUTE_LOG_LEVEL:-info}
+    volumes:
+      - lunaroute-data:/data/lunaroute
+    expose:
+      - "8081"
+      - "8082"
+
+volumes:
+  lunaroute-data:
