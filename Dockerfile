@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM ubuntu:24.04
 
 ARG LUNAROUTE_VERSION=0.2.1
 ARG TARGETARCH
