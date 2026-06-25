@@ -42,9 +42,11 @@ Deploy again in Coolify after changing the version.
 ## Local Smoke Test
 
 ```bash
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 curl http://127.0.0.1:8081/healthz
 open http://127.0.0.1:8082
 ```
+
+The base `docker-compose.yml` uses `expose` for Coolify. The local override maps ports to your host for testing.
 
 Session records are stored in the `lunaroute-data` Docker volume at `/data/lunaroute`.
