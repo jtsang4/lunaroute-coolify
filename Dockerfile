@@ -1,19 +1,32 @@
-FROM ubuntu:24.04
+# syntax=docker/dockerfile:1
 
-ARG LUNAROUTE_VERSION=0.2.1
-ARG TARGETARCH
+FROM rust:1.94-bookworm AS builder
+
+ARG LUNAROUTE_REF=main
+ARG CARGO_BUILD_JOBS=1
+
+WORKDIR /src
+
+ADD --keep-git-dir=true \
+    https://github.com/jtsang4/lunaroute.git#${LUNAROUTE_REF} \
+    /src
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/src/target \
+    mkdir -p /out \
+    && git rev-parse HEAD | tee /out/lunaroute-revision \
+    && cargo build --release --package lunaroute-server --jobs "${CARGO_BUILD_JOBS}" \
+    && cp target/release/lunaroute-server /out/lunaroute-server
+
+FROM ubuntu:24.04
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && case "$TARGETARCH" in \
-        amd64) ARCH=amd64 ;; \
-        arm64) ARCH=arm64 ;; \
-        *) echo "Unsupported arch: $TARGETARCH" && exit 1 ;; \
-    esac \
-    && curl -fsSL -o /usr/local/bin/lunaroute-server \
-        "https://github.com/erans/lunaroute/releases/download/v${LUNAROUTE_VERSION}/lunaroute-server-linux-${ARCH}-${LUNAROUTE_VERSION}" \
-    && chmod +x /usr/local/bin/lunaroute-server
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /out/lunaroute-server /usr/local/bin/lunaroute-server
+COPY --from=builder /out/lunaroute-revision /usr/local/share/lunaroute-revision
 
 RUN useradd -r -u 10001 lunaroute \
     && mkdir -p /data/lunaroute/sessions \

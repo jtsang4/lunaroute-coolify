@@ -1,8 +1,8 @@
 # lunaroute-coolify
 
-Coolify deployment wrapper for [erans/lunaroute](https://github.com/erans/lunaroute).
+Coolify deployment wrapper for [jtsang4/lunaroute](https://github.com/jtsang4/lunaroute), a fork of [erans/lunaroute](https://github.com/erans/lunaroute).
 
-This repository builds a small Ubuntu image that downloads the official LunaRoute release binary at build time. It keeps deployment config separate from the upstream LunaRoute source tree.
+This repository builds LunaRoute from the selected source ref and keeps deployment config separate from the application source tree. The default ref is the fork's `main` branch, so upstream changes enter production only after the fork is synced and Coolify is manually redeployed.
 
 ## Coolify Setup
 
@@ -16,7 +16,8 @@ This repository builds a small Ubuntu image that downloads the official LunaRout
 6. Add runtime environment variables:
 
 ```env
-LUNAROUTE_VERSION=0.2.1
+LUNAROUTE_REF=main
+CARGO_BUILD_JOBS=1
 LUNAROUTE_LOG_LEVEL=info
 ```
 
@@ -37,13 +38,14 @@ export OPENAI_BASE_URL=https://lunaroute-api.example.com/v1
 
 ## Upgrade LunaRoute
 
-Check the upstream releases, then update `LUNAROUTE_VERSION` in Coolify or in `docker-compose.yml`.
+1. Open [jtsang4/lunaroute](https://github.com/jtsang4/lunaroute).
+2. Select `Sync fork`, then `Update branch`.
+3. In Coolify, run a force deployment without the Docker build cache.
+4. Confirm the source commit in the build log and verify `/healthz` before updating the next instance.
 
-```env
-LUNAROUTE_VERSION=0.2.1
-```
+Keep `LUNAROUTE_REF=main` for normal manual upgrades. To deploy or roll back to an exact revision, set it to the full commit SHA and force deploy again.
 
-Deploy again in Coolify after changing the version.
+The resolved commit is stored at `/usr/local/share/lunaroute-revision` in the runtime image.
 
 ## Local Smoke Test
 
