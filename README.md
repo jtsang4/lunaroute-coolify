@@ -7,13 +7,13 @@ This repository builds LunaRoute from the selected source ref and keeps deployme
 ## Coolify Setup
 
 1. Create a new resource from this Git repository.
-2. Select the `Docker Compose` build pack.
-3. Set `Base Directory` to `/`.
-4. Set `Docker Compose Location` to `/docker-compose.yml`.
-5. Assign two domains to the `lunaroute` service:
+2. Select the `Dockerfile` build pack.
+3. Set `Base Directory` to `/` and `Dockerfile Location` to `/Dockerfile`.
+4. Set `Ports Exposes` to `8081,8082`.
+5. Assign two domains to the application:
    - API: `https://lunaroute-api.example.com:8081`
    - UI: `https://lunaroute-ui.example.com:8082`
-6. Add runtime environment variables:
+6. Add the following variables and make them available at build time:
 
 ```env
 LUNAROUTE_REF=main
@@ -21,13 +21,15 @@ CARGO_BUILD_JOBS=1
 LUNAROUTE_LOG_LEVEL=info
 ```
 
+For a dedicated Coolify build server, configure a Docker registry image and tag, enable `Use a Build Server?`, and authenticate the build and deployment servers to that registry. Mount a persistent volume at `/data/lunaroute`.
+
 API keys can stay in the local clients and pass through request headers. If you prefer server-side keys, add `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` as runtime-only secrets in Coolify.
 
 ## Protect the UI
 
 The LunaRoute UI exposes session metadata and can expose raw request/response data when JSONL session files are present. Protect the UI domain at the proxy layer.
 
-For Traefik Basic Auth in Coolify, edit the generated container labels and attach a Basic Auth middleware only to the UI HTTPS router. Keep the API router unauthenticated for model clients.
+For Traefik Basic Auth in Coolify, define a server-level Dynamic Configuration with a higher-priority UI router and Basic Auth middleware. Point that router at the application's UI Docker service and keep the API router unauthenticated for model clients.
 
 ## Client Configuration
 
@@ -40,7 +42,7 @@ export OPENAI_BASE_URL=https://lunaroute-api.example.com/v1
 
 1. Open [jtsang4/lunaroute](https://github.com/jtsang4/lunaroute).
 2. Select `Sync fork`, then `Update branch`.
-3. In Coolify, run a force deployment without the Docker build cache.
+3. In Coolify, run a force deployment without the Docker build cache. The dedicated build server compiles the image, pushes it to the configured registry, and the application server pulls it for deployment.
 4. Confirm the source commit in the build log and verify `/healthz` before updating the next instance.
 
 Keep `LUNAROUTE_REF=main` for normal manual upgrades. To deploy or roll back to an exact revision, set it to the full commit SHA and force deploy again.
@@ -55,6 +57,6 @@ curl http://127.0.0.1:8081/healthz
 open http://127.0.0.1:8082
 ```
 
-The base `docker-compose.yml` uses `expose` for Coolify. The local override maps ports to your host for testing.
+The base `docker-compose.yml` and local override are retained for local smoke testing. Coolify deployments use the repository Dockerfile directly.
 
 Session records are stored in the `lunaroute-data` Docker volume at `/data/lunaroute`.
