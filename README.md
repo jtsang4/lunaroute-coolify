@@ -23,6 +23,17 @@ LUNAROUTE_LOG_LEVEL=info
 
 For a dedicated Coolify build server, configure a Docker registry image and tag, enable `Use a Build Server?`, and authenticate the build and deployment servers to that registry. Mount a persistent volume at `/data/lunaroute`.
 
+### Multi-server deployments
+
+Compile the source once and reuse that image for additional regions:
+
+1. Choose one application as the source builder. Keep `/Dockerfile`, the build server, and a stable registry image such as `registry.example.com/lunaroute:latest` on that application.
+2. Set each additional application to `/Dockerfile.runtime`.
+3. Add `--build-arg LUNAROUTE_IMAGE=registry.example.com/lunaroute:latest` to its `Custom Docker Options`.
+4. Give each additional application its own registry output image, domains, environment variables, and persistent volume.
+
+This keeps the expensive Rust build in one deployment. Regional applications create a thin image from the builder's published image and retain independent runtime configuration.
+
 API keys can stay in the local clients and pass through request headers. If you prefer server-side keys, add `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` as runtime-only secrets in Coolify.
 
 ## Protect the UI
@@ -42,8 +53,9 @@ export OPENAI_BASE_URL=https://lunaroute-api.example.com/v1
 
 1. Open [jtsang4/lunaroute](https://github.com/jtsang4/lunaroute).
 2. Select `Sync fork`, then `Update branch`.
-3. In Coolify, run a force deployment without the Docker build cache. The dedicated build server compiles the image, pushes it to the configured registry, and the application server pulls it for deployment.
-4. Confirm the source commit in the build log and verify `/healthz` before updating the next instance.
+3. In Coolify, force deploy the source-builder application without the Docker build cache. The dedicated build server compiles the image, pushes it to the configured registry, and the application server pulls it for deployment.
+4. Confirm the source commit in the build log and verify `/healthz`.
+5. Redeploy each regional runtime application so `/Dockerfile.runtime` resolves the builder's new `latest` image.
 
 Keep `LUNAROUTE_REF=main` for normal manual upgrades. To deploy or roll back to an exact revision, set it to the full commit SHA and force deploy again.
 
