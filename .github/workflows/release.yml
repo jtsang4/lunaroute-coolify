@@ -1,0 +1,152 @@
+name: Release image
+run-name: Release ${{ inputs.version }} from LunaRoute ${{ inputs.lunaroute_ref }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, for example v1.0.0
+        required: true
+        type: string
+      lunaroute_ref:
+        description: LunaRoute source branch, tag, or full commit SHA
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-image
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.version }}
+      SOURCE_REF: ${{ inputs.lunaroute_ref }}
+      LOCAL_IMAGE: lunaroute-release:${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Resolve and validate release
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::Version must have the form v1.2.3"
+            exit 1
+          }
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$VERSION" \
+            --jq "map(select(.ref == \"refs/tags/$VERSION\")) | length")
+          if [[ "$existing" != 0 ]]; then
+            echo "::error::Release tag $VERSION already exists; choose a new version"
+            exit 1
+          fi
+          encoded_ref=$(jq -rn --arg ref "$SOURCE_REF" '$ref | @uri')
+          source_sha=$(gh api "repos/jtsang4/lunaroute/commits/$encoded_ref" --jq .sha)
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "LunaRoute source: $source_sha"
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build release image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: ${{ env.LOCAL_IMAGE }}
+          build-args: |
+            LUNAROUTE_REF=${{ steps.source.outputs.sha }}
+            CARGO_BUILD_JOBS=4
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ inputs.version }}
+            org.opencontainers.image.description=LunaRoute source ${{ steps.source.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify container startup and persistent storage
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name lunaroute-smoke \
+            --publish 127.0.0.1::8081 --publish 127.0.0.1::8082 \
+            --volume lunaroute-smoke-data:/data/lunaroute "$LOCAL_IMAGE"
+          api_port=$(docker port lunaroute-smoke 8081/tcp | cut -d: -f2)
+          ui_port=$(docker port lunaroute-smoke 8082/tcp | cut -d: -f2)
+          curl --fail --retry 20 --retry-connrefused --retry-delay 2 --max-time 10 \
+            "http://127.0.0.1:$api_port/healthz"
+          curl --fail --retry 10 --retry-connrefused --retry-delay 2 --max-time 10 \
+            --output /dev/null "http://127.0.0.1:$ui_port/"
+          test "$(docker exec lunaroute-smoke cat /usr/local/share/lunaroute-revision)" = "$SOURCE_SHA"
+          docker exec lunaroute-smoke test -w /data/lunaroute
+          docker exec lunaroute-smoke test -f /data/lunaroute/sessions.db
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish versioned image
+        id: publish
+        env:
+          IMAGE: ${{ steps.source.outputs.image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker tag "$LOCAL_IMAGE" "$IMAGE:$VERSION"
+          docker push "$IMAGE:$VERSION"
+          digest=$(docker image inspect "$IMAGE:$VERSION" --format '{{index .RepoDigests 0}}')
+          [[ "$digest" == "$IMAGE@sha256:"* ]]
+          echo "reference=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        env:
+          IMAGE: ${{ steps.source.outputs.image }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          IMAGE_REFERENCE: ${{ steps.publish.outputs.reference }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<EOF
+          Docker image: \`$IMAGE:$VERSION\`
+
+          Immutable image: \`$IMAGE_REFERENCE\`
+
+          Platform: \`linux/amd64\`
+
+          LunaRoute source: https://github.com/jtsang4/lunaroute/commit/$SOURCE_SHA
+
+          Deployment source: https://github.com/$GITHUB_REPOSITORY/commit/$GITHUB_SHA
+
+          Validation: API health check, UI startup, source revision, and persistent storage.
+          EOF
+          gh release create "$VERSION" --target "$GITHUB_SHA" --title "$VERSION" \
+            --notes-file release-notes.md
+          docker tag "$LOCAL_IMAGE" "$IMAGE:latest"
+          docker push "$IMAGE:latest"
+          cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Container diagnostics and cleanup
+        if: always()
+        shell: bash
+        run: |
+          docker logs lunaroute-smoke 2>&1 || true
+          docker rm --force lunaroute-smoke 2>/dev/null || true
+          docker volume rm lunaroute-smoke-data 2>/dev/null || true

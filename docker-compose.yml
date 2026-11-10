@@ -1,11 +1,6 @@
 services:
   lunaroute:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        LUNAROUTE_REF: ${LUNAROUTE_REF:-main}
-        CARGO_BUILD_JOBS: ${CARGO_BUILD_JOBS:-1}
+    image: ${LUNAROUTE_IMAGE:-ghcr.io/jtsang4/lunaroute-coolify:latest}
     environment:
       - LUNAROUTE_HOST=0.0.0.0
       - LUNAROUTE_PORT=8081

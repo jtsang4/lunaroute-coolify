@@ -1,40 +1,54 @@
 # lunaroute-coolify
 
-Coolify deployment wrapper for [jtsang4/lunaroute](https://github.com/jtsang4/lunaroute), a fork of [erans/lunaroute](https://github.com/erans/lunaroute).
+Publish [jtsang4/lunaroute](https://github.com/jtsang4/lunaroute) as a container image with GitHub Actions and deploy it with Coolify. Coolify pulls the image and manages runtime configuration, domains, and persistent storage.
 
-This repository builds LunaRoute from the selected source ref and keeps deployment config separate from the application source tree. The default ref is the fork's `main` branch, so upstream changes enter production only after the fork is synced and Coolify is manually redeployed.
+## Release an image
 
-## Coolify Setup
+1. Open **Actions → Release image → Run workflow**.
+2. Enter a new version such as `v1.0.0` and a LunaRoute source branch, tag, or full commit SHA. The default source ref is `main`.
+3. Run the workflow and wait for it to succeed.
 
-1. Create a new resource from this Git repository.
-2. Select the `Dockerfile` build pack.
-3. Set `Base Directory` to `/` and `Dockerfile Location` to `/Dockerfile`.
-4. Set `Ports Exposes` to `8081,8082`.
-5. Assign two domains to the application:
+The workflow resolves the source ref to an exact commit, builds a `linux/amd64` image, and checks API health, UI startup, source revision, and writable persistent storage before publishing:
+
+- Versioned image: `ghcr.io/jtsang4/lunaroute-coolify:v1.0.0`
+- Latest successful release: `ghcr.io/jtsang4/lunaroute-coolify:latest`
+- GitHub Release: includes the immutable image digest and both source commits
+
+Existing release tags are rejected. Choose a new version for each release. Syncing the LunaRoute fork does not publish an image automatically; run this workflow to release the selected source. The build uses the lockfile from that source commit. Its revision is also stored at `/usr/local/share/lunaroute-revision` in the image.
+
+The workflow uses the repository's `GITHUB_TOKEN` with package and contents write permissions. It does not need production API keys, proxy credentials, or a personal GitHub token. After the first publication, set the GHCR package visibility to **Public**, or authenticate every Coolify deployment server to GHCR with a token that has `read:packages`.
+
+## Coolify setup
+
+1. Create a **Docker Image** application in the target project, environment, and server.
+2. Set the image to `ghcr.io/jtsang4/lunaroute-coolify` and select a published version tag. For a fixed deployment, use the digest from its GitHub Release.
+3. Set **Ports Exposes** to `8081,8082`.
+4. Configure separate domains:
    - API: `https://lunaroute-api.example.com:8081`
    - UI: `https://lunaroute-ui.example.com:8082`
-6. Add the following variables and make them available at build time:
+5. Mount a persistent volume at `/data/lunaroute`.
+6. Add runtime-only environment variables, then deploy.
 
-```env
-LUNAROUTE_REF=main
-CARGO_BUILD_JOBS=1
-LUNAROUTE_LOG_LEVEL=info
-```
+The image already sets the listeners, enables both API dialects and session recording, and stores SQLite and JSONL data under `/data/lunaroute`. Override these defaults with runtime variables as needed.
 
-For a dedicated Coolify build server, configure a Docker registry image and tag, enable `Use a Build Server?`, and authenticate the build and deployment servers to that registry. Mount a persistent volume at `/data/lunaroute`.
+| Configuration | Location |
+| --- | --- |
+| LunaRoute source ref and release version | GitHub Actions workflow inputs |
+| `CARGO_BUILD_JOBS` | GitHub Actions build argument |
+| `LUNAROUTE_LOG_LEVEL`, `LUNAROUTE_ENABLE_JSONL_WRITER` | Coolify runtime variables |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` | Coolify runtime variables |
+| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` when needed | Coolify runtime secrets |
+| Domains, ports, volumes, and resource limits | Coolify application settings |
 
-### Multi-server deployments
+API keys can remain in local clients and pass through request headers. A Docker Image application does not need a Git source, Dockerfile location, build server, or build-time environment variables. See [Coolify's image deployment guide](https://coolify.io/docs/applications/deployments/docker-image).
 
-Compile the source once and reuse that image for additional regions:
+### Migrate an existing application
 
-1. Choose one application as the source builder. Keep `/Dockerfile`, the build server, and a stable registry image such as `registry.example.com/lunaroute:latest` on that application.
-2. Set each additional application to `/Dockerfile.runtime`.
-3. Add `--build-arg LUNAROUTE_IMAGE=registry.example.com/lunaroute:latest` to its `Custom Docker Options`.
-4. Give each additional application its own registry output image, domains, environment variables, and persistent volume.
+Prepare the image application on the same server with the original runtime variables, ports, health checks, resource limits, and Docker network. Initially verify it with a temporary data volume and without the production domains.
 
-This keeps the expensive Rust build in one deployment. Regional applications create a thin image from the builder's published image and retain independent runtime configuration.
+Before switching, stop the old application and back up its persistent data. Attach the original volume by its full Docker volume name; creating a new volume with the same short label does not restore existing data. Mount it at `/data/lunaroute`. Transfer the production domains and any UI proxy authentication rules, updating application-specific service references, then deploy and verify the API and UI.
 
-API keys can stay in the local clients and pass through request headers. If you prefer server-side keys, add `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` as runtime-only secrets in Coolify.
+Keep the old application stopped and available for rollback until the new deployment is verified. Each server or region needs its own runtime configuration and persistent volume; all can pull the same release image.
 
 ## Protect the UI
 
@@ -42,33 +56,33 @@ The LunaRoute UI exposes session metadata and can expose raw request/response da
 
 For Traefik Basic Auth in Coolify, define a server-level Dynamic Configuration with a higher-priority UI router and Basic Auth middleware. Point that router at the application's UI Docker service and keep the API router unauthenticated for model clients.
 
-## Client Configuration
+## Client configuration
 
 ```bash
 export ANTHROPIC_BASE_URL=https://lunaroute-api.example.com
 export OPENAI_BASE_URL=https://lunaroute-api.example.com/v1
 ```
 
-## Upgrade LunaRoute
+## Upgrade or roll back
 
-1. Open [jtsang4/lunaroute](https://github.com/jtsang4/lunaroute).
-2. Select `Sync fork`, then `Update branch`.
-3. In Coolify, force deploy the source-builder application without the Docker build cache. The dedicated build server compiles the image, pushes it to the configured registry, and the application server pulls it for deployment.
-4. Confirm the source commit in the build log and verify `/healthz`.
-5. Redeploy each regional runtime application so `/Dockerfile.runtime` resolves the builder's new `latest` image.
+Run **Release image** with a new version to publish an upgrade. In Coolify, select the new version or digest, save, and redeploy. Coolify pulls the published image without compiling Rust. Verify `/healthz` and the protected UI after deployment.
 
-Keep `LUNAROUTE_REF=main` for normal manual upgrades. To deploy or roll back to an exact revision, set it to the full commit SHA and force deploy again.
+To roll back, select a previous release image and redeploy. Database compatibility must be checked when rolling back across application schema changes. Image publication and production deployment are separate operations; releasing an image does not automatically redeploy Coolify.
 
-The resolved commit is stored at `/usr/local/share/lunaroute-revision` in the runtime image.
+## Local smoke test
 
-## Local Smoke Test
+Run the published image with local ports and persistent storage:
+
+```bash
+docker run --rm --name lunaroute \
+  -p 127.0.0.1:8081:8081 -p 127.0.0.1:8082:8082 \
+  -v lunaroute-data:/data/lunaroute \
+  ghcr.io/jtsang4/lunaroute-coolify:latest
+```
+
+To build from source locally:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 curl http://127.0.0.1:8081/healthz
-open http://127.0.0.1:8082
 ```
-
-The base `docker-compose.yml` and local override are retained for local smoke testing. Coolify deployments use the repository Dockerfile directly.
-
-Session records are stored in the `lunaroute-data` Docker volume at `/data/lunaroute`.

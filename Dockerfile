@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     mkdir -p /out \
     && git rev-parse HEAD | tee /out/lunaroute-revision \
-    && cargo build --release --package lunaroute-server --jobs "${CARGO_BUILD_JOBS}" \
+    && cargo build --locked --release --package lunaroute-server --jobs "${CARGO_BUILD_JOBS}" \
     && cp target/release/lunaroute-server /out/lunaroute-server
 
 FROM ubuntu:24.04
