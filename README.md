@@ -14,7 +14,7 @@ The workflow resolves the source ref to an exact commit, builds a `linux/amd64` 
 - Latest successful release: `ghcr.io/jtsang4/lunaroute-coolify:latest`
 - GitHub Release: includes the immutable image digest and both source commits
 
-Existing release tags are rejected. Choose a new version for each release. Syncing the LunaRoute fork does not publish an image automatically; run this workflow to release the selected source. The build uses the lockfile from that source commit. Its revision is also stored at `/usr/local/share/lunaroute-revision` in the image.
+Existing release tags are rejected. Choose a new version for each release. Syncing the LunaRoute fork does not publish an image automatically; run this workflow to release the selected source. Its revision is also stored at `/usr/local/share/lunaroute-revision` in the image.
 
 The workflow uses the repository's `GITHUB_TOKEN` with package and contents write permissions. It does not need production API keys, proxy credentials, or a personal GitHub token. After the first publication, set the GHCR package visibility to **Public**, or authenticate every Coolify deployment server to GHCR with a token that has `read:packages`.
 
