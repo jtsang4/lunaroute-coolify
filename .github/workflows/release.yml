@@ -88,9 +88,9 @@ jobs:
             --volume lunaroute-smoke-data:/data/lunaroute "$LOCAL_IMAGE"
           api_port=$(docker port lunaroute-smoke 8081/tcp | cut -d: -f2)
           ui_port=$(docker port lunaroute-smoke 8082/tcp | cut -d: -f2)
-          curl --fail --retry 20 --retry-connrefused --retry-delay 2 --max-time 10 \
+          curl --fail --retry 20 --retry-all-errors --retry-delay 2 --retry-max-time 90 --max-time 10 \
             "http://127.0.0.1:$api_port/healthz"
-          curl --fail --retry 10 --retry-connrefused --retry-delay 2 --max-time 10 \
+          curl --fail --retry 10 --retry-all-errors --retry-delay 2 --retry-max-time 90 --max-time 10 \
             --output /dev/null "http://127.0.0.1:$ui_port/"
           test "$(docker exec lunaroute-smoke cat /usr/local/share/lunaroute-revision)" = "$SOURCE_SHA"
           docker exec lunaroute-smoke test -w /data/lunaroute
