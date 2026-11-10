@@ -21,7 +21,7 @@ The workflow uses the repository's `GITHUB_TOKEN` with package and contents writ
 ## Coolify setup
 
 1. Create a **Docker Image** application in the target project, environment, and server.
-2. Set the image to `ghcr.io/jtsang4/lunaroute-coolify` and select a published version tag. For a fixed deployment, use the digest from its GitHub Release.
+2. Set the image to `ghcr.io/jtsang4/lunaroute-coolify` and the tag to `latest`.
 3. Set **Ports Exposes** to `8081,8082`.
 4. Configure separate domains:
    - API: `https://lunaroute-api.example.com:8081`
@@ -65,9 +65,9 @@ export OPENAI_BASE_URL=https://lunaroute-api.example.com/v1
 
 ## Upgrade or roll back
 
-Run **Release image** with a new version to publish an upgrade. In Coolify, select the new version or digest, save, and redeploy. Coolify pulls the published image without compiling Rust. Verify `/healthz` and the protected UI after deployment.
+Run **Release image** with a new version to publish an upgrade, then select **Redeploy** in Coolify. The application keeps the `latest` tag and pulls the most recently published image without compiling Rust. **Redeploy without cache** also pulls that image; no tag or digest update is needed. Verify `/healthz` and the protected UI after deployment.
 
-To roll back, select a previous release image and redeploy. Database compatibility must be checked when rolling back across application schema changes. Image publication and production deployment are separate operations; releasing an image does not automatically redeploy Coolify.
+To roll back, temporarily select a previous release version or digest and redeploy. Restore the `latest` tag when returning to normal upgrades. Database compatibility must be checked when rolling back across application schema changes. Image publication and production deployment are separate operations; releasing an image does not automatically redeploy Coolify.
 
 ## Local smoke test
 
